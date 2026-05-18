@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -26,10 +27,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.hotel_pere_maria_app.ui.Models.Reservation
+import com.example.hotel_pere_maria_app.ui.Navegation.NavegationMain
 import com.example.hotel_pere_maria_app.ui.ViewModels.HomeUiEvent
 import com.example.hotel_pere_maria_app.ui.ViewModels.HomeViewModel
 import kotlinx.coroutines.flow.StateFlow
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -141,7 +144,7 @@ fun Home(onNavigate: (String) -> Unit, snackbarHostState : SnackbarHostState) {
             }else{
 
                 items(reservas){ reserva ->
-                    CardReserva(reserva, {homeviewModel.onEditarReservaClick(reserva.reservation_id, reserva)})
+                    CardReserva(reserva, {homeviewModel.onEditarReservaClick(reserva.reservation_id, reserva)},{homeviewModel.descargarYGuardarFactura(context,reserva.reservation_id)})
                 }
 
             }
@@ -224,7 +227,8 @@ fun SinproxEstancia(){
 }
 
 @Composable
-fun CardReserva(reserva: Reservation, onEditarReserva: () -> Unit) {
+fun CardReserva(reserva: Reservation, onEditarReserva: () -> Unit, onDescargarFactura:(reservation_id:String) -> Unit) {
+    val esActiva = reserva.check_out.after(Date()) && reserva.cancelation_date == null
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -287,8 +291,28 @@ fun CardReserva(reserva: Reservation, onEditarReserva: () -> Unit) {
                     color = MaterialTheme.colorScheme.error
                 )
             }
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = { onDescargarFactura(reserva.reservation_id) },
+                enabled = !esActiva, // Se deshabilita automáticamente si no cumple los requisitos
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary
+                )
+            ) {
+                Text(
+                    text = when {
+                        esActiva -> "No facturable (Reserva Activa)"
+                        else -> "📄 Descargar Factura"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
 
         }
+
     }
 }
 
@@ -308,5 +332,29 @@ fun ServiceItem(icon: ImageVector, label: String, onClick: () -> Unit) {
         Spacer(Modifier.height(4.dp))
         Text(text = label, style = MaterialTheme.typography.labelSmall)
     }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun CardReservaPreview() {
+    // 1. Creamos una reserva ficticia con datos de prueba (Mock)
+    val reservaDePrueba = Reservation(
+        reservation_id = "RSV-2026-004",
+        room_id = "Habitación 104 (Doble)",
+        user_id = "Cliente: Carlos Mendoza",
+        check_in = Date(),  // O el formato que manejes, ej: "2026-05-17"
+        check_out = Date(), // O "2026-05-20"
+        price = 245.50,
+        createdBy = "Recepcionista Juan",
+        cancelation_date = Date()
+    )
+
+    CardReserva(
+        reserva = reservaDePrueba,
+        onEditarReserva = {
+            // Al ser un preview, la acción del botón se deja vacía { }
+        },
+        onDescargarFactura = {}
+    )
 }
 
