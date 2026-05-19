@@ -9,6 +9,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.hotel_pere_maria_app.ui.Models.BookingAudit
 import com.example.hotel_pere_maria_app.ui.Models.Reservation
 import com.example.hotel_pere_maria_app.ui.Models.ReservationRepository
 import com.example.hotel_pere_maria_app.ui.Navegation.Routes
@@ -18,6 +19,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -44,6 +46,45 @@ class HomeViewModel: ViewModel() {
     val uiEvent = _uiEvent.receiveAsFlow()
 
     private val formatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+
+    private val _logsMap = MutableStateFlow<Map<String, List<BookingAudit>>>(emptyMap())
+    val logsMap: StateFlow<Map<String, List<BookingAudit>>> = _logsMap.asStateFlow()
+
+    fun cargarLogsDeReserva(reservation_id:String) {
+
+        
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.bookingauditService.getReservationLogs(reservation_id)
+
+                if (response.isSuccessful && response.body() != null) {
+                    _logsMap.update { mapaActual ->
+                        val nuevoMapa = mapaActual.toMutableMap()
+                        nuevoMapa[reservation_id] = response.body()!! as List<BookingAudit>
+                        nuevoMapa
+                    }
+                } else {
+                    _logsMap.update { mapaActual ->
+                        mapaActual + (reservation_id to emptyList())
+                    }
+                }
+            } catch (e: Exception) {
+                // Si se cae el internet o falla el timeout
+                _logsMap.update { mapaActual ->
+                    mapaActual + (reservation_id to listOf(
+                        BookingAudit(
+                            _id = "",
+                            reservation_id = reservation_id,
+                            action = "ERROR",
+                            user_id = "Sistema",
+                            details = "No se pudo conectar con el servidor central.",
+                            timestamp = java.util.Date()
+                        )
+                    ))
+                }
+            }
+        }
+    }
 
     fun descargarYGuardarFactura(context: Context, reservationId: String) {
         viewModelScope.launch {

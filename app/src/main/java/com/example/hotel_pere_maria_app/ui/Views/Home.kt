@@ -2,7 +2,11 @@ package com.example.hotel_pere_maria_app.ui.Views
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,9 +20,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +33,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.hotel_pere_maria_app.ui.Models.BookingAudit
 import com.example.hotel_pere_maria_app.ui.Models.Reservation
 import com.example.hotel_pere_maria_app.ui.Navegation.NavegationMain
 import com.example.hotel_pere_maria_app.ui.ViewModels.HomeUiEvent
@@ -42,6 +50,7 @@ fun Home(onNavigate: (String) -> Unit, snackbarHostState : SnackbarHostState) {
     val reservaReciente by homeviewModel.proximaReserva.collectAsState(initial = null)
     val state by homeviewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val logsPorReserva by homeviewModel.logsMap.collectAsState()
 
     LaunchedEffect(Unit) {
         homeviewModel.navigationEvent.collect { ruta ->
@@ -144,7 +153,12 @@ fun Home(onNavigate: (String) -> Unit, snackbarHostState : SnackbarHostState) {
             }else{
 
                 items(reservas){ reserva ->
-                    CardReserva(reserva, {homeviewModel.onEditarReservaClick(reserva.reservation_id, reserva)},{homeviewModel.descargarYGuardarFactura(context,reserva.reservation_id)})
+                    CardReserva(reserva,
+                        {homeviewModel.onEditarReservaClick(reserva.reservation_id, reserva)},
+                        {homeviewModel.descargarYGuardarFactura(context, reserva.reservation_id)},
+                        logsDeEstaReserva = logsPorReserva[reserva.reservation_id],
+                        {homeviewModel.cargarLogsDeReserva(reserva.reservation_id)}
+                        )
                 }
 
             }
@@ -223,12 +237,23 @@ fun SinproxEstancia(){
                 style = MaterialTheme.typography.bodyMedium
             )
         }
+
     }
 }
 
 @Composable
-fun CardReserva(reserva: Reservation, onEditarReserva: () -> Unit, onDescargarFactura:(reservation_id:String) -> Unit) {
+fun CardReserva(reserva: Reservation, onEditarReserva: () -> Unit, onDescargarFactura:(reservation_id:String) -> Unit,logsDeEstaReserva: List<BookingAudit>?, onCargarLogs: (reservation_id: String) -> Unit) {
     val esActiva = reserva.check_out.after(Date()) && reserva.cancelation_date == null
+    var auditoriaExpandida by remember { mutableStateOf(false) }
+    // Rotación suave del icono de la flecha (0 grados cerrado, 180 grados abierto)
+    val rotacionFlecha by animateFloatAsState(targetValue = if (auditoriaExpandida) 180f else 0f)
+
+    LaunchedEffect(auditoriaExpandida) {
+        if (auditoriaExpandida) {
+            onCargarLogs(reserva.reservation_id)
+        }
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -310,6 +335,138 @@ fun CardReserva(reserva: Reservation, onEditarReserva: () -> Unit, onDescargarFa
                     fontWeight = FontWeight.Bold
                 )
             }
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Cabecera clickable para abrir o cerrar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { auditoriaExpandida = !auditoriaExpandida }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Historial de auditoría",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium
+                )
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Ver auditoría",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.rotate(rotacionFlecha)
+                )
+            }
+
+            // Bloque animado que lee la API en función del estado 'logsDeEstaReserva'
+            AnimatedVisibility(visible = auditoriaExpandida) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(6.dp)
+                        )
+                        .padding(8.dp)
+                ) {
+                    when {
+                        // CASO A: El mapa está en null (Significa que la API de Node sigue respondiendo)
+                        logsDeEstaReserva == null -> {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        // CASO B: La API respondió un array vacío [] (No hay cambios para esta reserva)
+                        logsDeEstaReserva.isEmpty() -> {
+                            Text(
+                                text = "No hay registros de auditoría para esta reserva.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+
+                        // CASO C: ¡Éxito! Iteramos sobre la lista de objetos de tu BookingAudit
+                        else -> {
+                            logsDeEstaReserva.forEach { audit ->
+                                val fechaFormateada = SimpleDateFormat(
+                                    "dd/MM/yyyy HH:mm",
+                                    Locale.getDefault()
+                                ).format(audit.timestamp)
+
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        // Pinta la acción (CREACION, MODIFICACION, CANCELACION...)
+                                        Text(
+                                            text = audit.action.uppercase(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (audit.action.contains(
+                                                    "CANCEL",
+                                                    ignoreCase = true
+                                                ) || audit.action.contains(
+                                                    "ERROR",
+                                                    ignoreCase = true
+                                                )
+                                            )
+                                                MaterialTheme.colorScheme.error
+                                            else
+                                                MaterialTheme.colorScheme.primary
+                                        )
+                                        // Pinta la fecha al lado derecho
+                                        Text(
+                                            text = fechaFormateada,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                                alpha = 0.6f
+                                            )
+                                        )
+                                    }
+
+                                    // ID del usuario/recepcionista que lo firmó
+                                    Text(
+                                        text = "Operador ID: ${audit.user_id}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                            alpha = 0.5f
+                                        ),
+                                        modifier = Modifier.padding(start = 2.dp, top = 1.dp)
+                                    )
+
+                                    // Línea de separación sutil entre cada registro del historial
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(top = 8.dp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                            alpha = 0.08f
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
 
         }
 
@@ -334,27 +491,4 @@ fun ServiceItem(icon: ImageVector, label: String, onClick: () -> Unit) {
     }
 }
 
-@Preview(showBackground = true)
-@Composable
-fun CardReservaPreview() {
-    // 1. Creamos una reserva ficticia con datos de prueba (Mock)
-    val reservaDePrueba = Reservation(
-        reservation_id = "RSV-2026-004",
-        room_id = "Habitación 104 (Doble)",
-        user_id = "Cliente: Carlos Mendoza",
-        check_in = Date(),  // O el formato que manejes, ej: "2026-05-17"
-        check_out = Date(), // O "2026-05-20"
-        price = 245.50,
-        createdBy = "Recepcionista Juan",
-        cancelation_date = Date()
-    )
-
-    CardReserva(
-        reserva = reservaDePrueba,
-        onEditarReserva = {
-            // Al ser un preview, la acción del botón se deja vacía { }
-        },
-        onDescargarFactura = {}
-    )
-}
 
